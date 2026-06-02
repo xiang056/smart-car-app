@@ -81,6 +81,7 @@ class _CarControlPageState extends State<CarControlPage> {
       _connSub = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected && mounted) {
           _notifySub?.cancel();
+          _lastCmd = '';
           setState(() {
             _isConnected = false;
             _status      = 'Disconnected';
@@ -113,9 +114,9 @@ class _CarControlPageState extends State<CarControlPage> {
       await char.setNotifyValue(true);
       _notifySub = char.onValueReceived.listen((data) {
         final text  = utf8.decode(data, allowMalformed: true);
-        final match = RegExp(r'd=(\d+)').firstMatch(text);
+        final match = RegExp(r'\$STATUS,(\d+),(\d+),(\d+),(\d+)#').firstMatch(text);
         if (match != null && mounted) {
-          setState(() => _distance = int.tryParse(match.group(1)!) ?? 0);
+          setState(() => _distance = int.tryParse(match.group(3)!) ?? 0);
         }
       });
 
@@ -137,6 +138,7 @@ class _CarControlPageState extends State<CarControlPage> {
     await _notifySub?.cancel();
     await _connSub?.cancel();
     await _device?.disconnect();
+    _lastCmd = '';
     if (mounted) {
       setState(() {
         _device      = null;
@@ -149,10 +151,15 @@ class _CarControlPageState extends State<CarControlPage> {
   }
 
   void _send(String cmd) {
-    if (!_isConnected || _txChar == null) return;
-    if (cmd == _lastCmd) return;
+    if (!_isConnected) { setState(() => _status = 'DBG: not connected'); return; }
+    if (_txChar == null) { setState(() => _status = 'DBG: txChar null'); return; }
+    if (cmd == _lastCmd) { setState(() => _status = 'DBG: dup $cmd'); return; }
     _lastCmd = cmd;
-    _txChar!.write(utf8.encode(cmd), withoutResponse: true).catchError((_) {});
+    _txChar!.write(utf8.encode(cmd), withoutResponse: false).then((_) {
+      if (mounted) setState(() => _status = 'Sent: $cmd');
+    }).catchError((e) {
+      if (mounted) setState(() => _status = 'Write error: $e');
+    });
   }
 
   @override
