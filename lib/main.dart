@@ -114,7 +114,7 @@ class _CarControlPageState extends State<CarControlPage> {
       await char.setNotifyValue(true);
       _notifySub = char.onValueReceived.listen((data) {
         final text  = utf8.decode(data, allowMalformed: true);
-        final match = RegExp(r'\$STATUS,(\d+),(\d+),(\d+),(\d+)#').firstMatch(text);
+        final match = RegExp(r'S,(\d+),(\d+),(\d+),(\d+)').firstMatch(text);
         if (match != null && mounted) {
           setState(() => _distance = int.tryParse(match.group(3)!) ?? 0);
         }
