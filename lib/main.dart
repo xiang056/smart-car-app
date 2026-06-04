@@ -48,7 +48,7 @@ class _CarControlPageState extends State<CarControlPage> {
   BluetoothCharacteristic?  _txChar;
   bool                      _isConnected = false;
   String                    _status      = 'Disconnected';
-  int                       _distance    = 0;
+  int                       _carState    = 0;   // 0=STOP 1=FWD 2=BWD 3=LEFT 4=RIGHT
   String                    _lastCmd     = 'S';
 
   StreamSubscription<List<int>>?                _notifySub;
@@ -85,7 +85,7 @@ class _CarControlPageState extends State<CarControlPage> {
           setState(() {
             _isConnected = false;
             _status      = 'Disconnected';
-            _distance    = 0;
+            _carState    = 0;
             _txChar      = null;
           });
         }
@@ -114,9 +114,9 @@ class _CarControlPageState extends State<CarControlPage> {
       await char.setNotifyValue(true);
       _notifySub = char.onValueReceived.listen((data) {
         final text  = utf8.decode(data, allowMalformed: true);
-        final match = RegExp(r'S,(\d+),(\d+),(\d+),(\d+)').firstMatch(text);
+        final match = RegExp(r'S,(\d+),(\d+)').firstMatch(text);
         if (match != null && mounted) {
-          setState(() => _distance = int.tryParse(match.group(3)!) ?? 0);
+          setState(() => _carState = int.tryParse(match.group(2)!) ?? 0);
         }
       });
 
@@ -145,19 +145,16 @@ class _CarControlPageState extends State<CarControlPage> {
         _txChar      = null;
         _isConnected = false;
         _status      = 'Disconnected';
-        _distance    = 0;
+        _carState    = 0;
       });
     }
   }
 
   void _send(String cmd) {
-    if (!_isConnected) { setState(() => _status = 'DBG: not connected'); return; }
-    if (_txChar == null) { setState(() => _status = 'DBG: txChar null'); return; }
-    if (cmd == _lastCmd) { setState(() => _status = 'DBG: dup $cmd'); return; }
+    if (!_isConnected || _txChar == null) return;
+    if (cmd == _lastCmd) return;
     _lastCmd = cmd;
-    _txChar!.write(utf8.encode(cmd), withoutResponse: false).then((_) {
-      if (mounted) setState(() => _status = 'Sent: $cmd');
-    }).catchError((e) {
+    _txChar!.write(utf8.encode(cmd), withoutResponse: true).catchError((e) {
       if (mounted) setState(() => _status = 'Write error: $e');
     });
   }
@@ -170,12 +167,39 @@ class _CarControlPageState extends State<CarControlPage> {
     super.dispose();
   }
 
-  Color get _distanceColor {
-    if (_distance == 0) return Colors.white38;
-    if (_distance < 15) return Colors.red;
-    if (_distance < 30) return Colors.orange;
-    return Colors.cyan;
-  }
+  static const _stateLabels = [
+    'STOP',      // 0
+    'FORWARD',   // 1
+    'BACKWARD',  // 2
+    'LEFT',      // 3
+    'RIGHT',     // 4
+    'FWD LEFT',  // 5
+    'FWD RIGHT', // 6
+    'BWD LEFT',  // 7
+    'BWD RIGHT', // 8
+  ];
+  static const _stateIcons = [
+    Icons.stop_circle_outlined,           // 0
+    Icons.keyboard_arrow_up_rounded,      // 1
+    Icons.keyboard_arrow_down_rounded,    // 2
+    Icons.keyboard_arrow_left_rounded,    // 3
+    Icons.keyboard_arrow_right_rounded,   // 4
+    Icons.turn_slight_left,               // 5
+    Icons.turn_slight_right,              // 6
+    Icons.turn_slight_left,               // 7
+    Icons.turn_slight_right,              // 8
+  ];
+  static const _stateColors = [
+    Colors.white38,    // 0 STOP
+    Colors.cyan,       // 1 FORWARD
+    Colors.orange,     // 2 BACKWARD
+    Colors.cyanAccent, // 3 LEFT
+    Colors.cyanAccent, // 4 RIGHT
+    Colors.cyan,       // 5 FWD LEFT
+    Colors.cyan,       // 6 FWD RIGHT
+    Colors.orange,     // 7 BWD LEFT
+    Colors.orange,     // 8 BWD RIGHT
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -211,7 +235,12 @@ class _CarControlPageState extends State<CarControlPage> {
             children: [
               _StatusBar(status: _status, isConnected: _isConnected),
               const SizedBox(height: 16),
-              _DistanceCard(distance: _distance, color: _distanceColor),
+              _StateCard(
+                state: _carState,
+                label: _stateLabels[_carState.clamp(0, 8)],
+                icon:  _stateIcons[_carState.clamp(0, 8)],
+                color: _stateColors[_carState.clamp(0, 8)],
+              ),
               const SizedBox(height: 8),
               const Spacer(),
               _DPad(onSend: _send, enabled: _isConnected),
@@ -381,11 +410,18 @@ class _StatusBar extends StatelessWidget {
   }
 }
 
-class _DistanceCard extends StatelessWidget {
-  final int distance;
-  final Color color;
+class _StateCard extends StatelessWidget {
+  final int     state;
+  final String  label;
+  final IconData icon;
+  final Color   color;
 
-  const _DistanceCard({required this.distance, required this.color});
+  const _StateCard({
+    required this.state,
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -400,7 +436,7 @@ class _DistanceCard extends StatelessWidget {
       child: Column(
         children: [
           const Text(
-            'DISTANCE',
+            'STATUS',
             style: TextStyle(
               color: Colors.white38,
               fontSize: 11,
@@ -408,32 +444,17 @@ class _DistanceCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
+          Icon(icon, color: color, size: 36),
+          const SizedBox(height: 6),
           Text(
-            distance > 0 ? '$distance cm' : '-- cm',
+            label,
             style: TextStyle(
               color: color,
-              fontSize: 42,
+              fontSize: 28,
               fontWeight: FontWeight.bold,
-              letterSpacing: 1,
+              letterSpacing: 2,
             ),
           ),
-          if (distance > 0 && distance < 15)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.warning_amber_rounded,
-                      color: Colors.red, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Obstacle detected!',
-                    style: TextStyle(
-                        color: Colors.red.shade300, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
