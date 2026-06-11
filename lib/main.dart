@@ -48,7 +48,8 @@ class _CarControlPageState extends State<CarControlPage> {
   BluetoothCharacteristic?  _txChar;
   bool                      _isConnected = false;
   String                    _status      = 'Disconnected';
-  int                       _carState    = 0;   // 0=STOP 1=FWD 2=BWD 3=LEFT 4=RIGHT
+  int                       _carState    = 0;   // mirrors CarState_t (0–8)
+  int                       _speedPct    = 0;
   String                    _lastCmd     = 'S';
 
   StreamSubscription<List<int>>?                _notifySub;
@@ -86,6 +87,7 @@ class _CarControlPageState extends State<CarControlPage> {
             _isConnected = false;
             _status      = 'Disconnected';
             _carState    = 0;
+            _speedPct    = 0;
             _txChar      = null;
           });
         }
@@ -116,7 +118,10 @@ class _CarControlPageState extends State<CarControlPage> {
         final text  = utf8.decode(data, allowMalformed: true);
         final match = RegExp(r'S,(\d+),(\d+)').firstMatch(text);
         if (match != null && mounted) {
-          setState(() => _carState = int.tryParse(match.group(2)!) ?? 0);
+          setState(() {
+              _speedPct = int.tryParse(match.group(1)!) ?? 0;
+              _carState = int.tryParse(match.group(2)!) ?? 0;
+            });
         }
       });
 
@@ -146,6 +151,7 @@ class _CarControlPageState extends State<CarControlPage> {
         _isConnected = false;
         _status      = 'Disconnected';
         _carState    = 0;
+        _speedPct    = 0;
       });
     }
   }
@@ -236,10 +242,11 @@ class _CarControlPageState extends State<CarControlPage> {
               _StatusBar(status: _status, isConnected: _isConnected),
               const SizedBox(height: 16),
               _StateCard(
-                state: _carState,
-                label: _stateLabels[_carState.clamp(0, 8)],
-                icon:  _stateIcons[_carState.clamp(0, 8)],
-                color: _stateColors[_carState.clamp(0, 8)],
+                state:    _carState,
+                label:    _stateLabels[_carState.clamp(0, 8)],
+                icon:     _stateIcons[_carState.clamp(0, 8)],
+                color:    _stateColors[_carState.clamp(0, 8)],
+                speedPct: _speedPct,
               ),
               const SizedBox(height: 8),
               const Spacer(),
@@ -415,19 +422,21 @@ class _StateCard extends StatelessWidget {
   final String  label;
   final IconData icon;
   final Color   color;
+  final int     speedPct;
 
   const _StateCard({
     required this.state,
     required this.label,
     required this.icon,
     required this.color,
+    required this.speedPct,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 20),
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(14),
@@ -454,6 +463,31 @@ class _StateCard extends StatelessWidget {
               fontWeight: FontWeight.bold,
               letterSpacing: 2,
             ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Text(
+                '$speedPct%',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: speedPct / 100,
+                    backgroundColor: Colors.white12,
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                    minHeight: 6,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
